@@ -1,0 +1,95 @@
+import numpy as np
+from ultralytics import YOLO
+import cv2
+import cvzone
+import math
+from sort import *
+
+cap = cv2.VideoCapture(r"C:\Users\heman\Downloads\27260-362770008_medium.mp4")
+#cap.set(3,1260)
+#cap.set(4,720)
+
+model = YOLO('../yolo weights/yolov8n.pt')
+
+classNames = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "auto", "train", "truck", "boat",
+              "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
+              "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
+              "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat",
+              "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+              "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli",
+              "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed",
+              "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone",
+              "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors",
+              "teddy bear", "hair drier", "toothbrush"]
+#prev_frame_time = 0
+#new_frame_time = 0
+mask = cv2.imread(r"C:\Users\heman\Downloads\Untitled design (2).png")  # Use a real image mask
+
+#tracking
+tracker = Sort(max_age = 20,min_hits=3,iou_threshold=0.3)
+
+limits = [61,345,1175,345]
+totalCount=[]
+
+while True:
+    success, frame = cap.read()
+    if mask.shape[:2] != frame.shape[:2]:
+        mask = cv2.resize(mask, (frame.shape[1], frame.shape[0]))
+    imgRegion = cv2.bitwise_and(frame,mask)
+
+    results = model(imgRegion,stream=True)
+
+    detections = np.empty((0,5))
+
+    for r in results:
+        boxes = r.boxes
+        for box in boxes:
+
+            #Bounding Box
+            x1,y1,x2,y2 = box.xyxy[0]
+            x1,y1,x2,y2 = int(x1),int(y1),int(x2),int(y2)
+            #cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
+            w,h = x2-x1,y2-y1
+            #cvzone.cornerRect(frame,(x1,y1,w,h))
+
+            #confidence score
+            conf = math.ceil((box.conf[0]*100))/100
+
+            #class name
+            cls = int(box.cls[0])
+            currentclass = classNames[cls]
+            if currentclass in ["car", "truck", "bus", "motorbike"] and conf > 0.3:
+
+                #cvzone.putTextRect(frame,f'{classNames[cls]}{conf}',(max(0,x1),max(35,y1)),scale=1,thickness=2)
+                #cvzone.cornerRect(frame,(x1,y1,w,h),l=9,rt=5)
+                currentArray = np.array([x1,y1,x2,y2,conf])
+                detections = np.vstack((detections,currentArray))
+
+    resultstracker = tracker.update(detections)
+    cv2.line(frame,(limits[0],limits[1]),(limits[2],limits[3]),(0,0,255),5)
+
+    for result in resultstracker:
+        x1,y1,x2,y2,Id =result
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+        print(result)
+        w,h = x2-x1,y2-y1
+        cvzone.cornerRect(frame,(x1,y1,w,h),l=9,rt=2,colorR=(255,0,0))
+        cvzone.putTextRect(frame, f'{int(Id)}', (max(0, x1), max(35, y1)), scale=2, thickness=3,offset = 10)
+
+        cx,cy = x1+w//2,y1+h//2
+        cv2.circle(frame,(cx,cy),5,(0,0,255),cv2.FILLED)
+
+        if limits[0] <cx<limits[2]and (limits[1]-15) <cy<(limits[1]+15):
+            if Id not in totalCount:
+                totalCount.append(Id)
+
+                cv2.line(frame, (limits[0], limits[1]), (limits[2], limits[3]), (0, 255,0), 5)
+
+    cvzone.putTextRect(frame, f'Count:{len(totalCount)}', (50, 50))
+
+    frame2 = cv2.resize(frame,(1260,720))
+
+   # imgRegion2 = cv2.resize(imgRegion,(1260,720))
+    cv2.imshow("CAR COUNTER", frame2)
+    #cv2.imshow("image region", imgRegion2)
+    cv2.waitKey(1)
